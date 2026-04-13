@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user profile information and statistics.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier for the user." },
+        "email": { "type": "string", "format": "email", "description": "User's email address." },
+        "displayName": { "type": "string", "description": "User's display name." },
+        "photoURL": { "type": "string", "format": "uri", "description": "URL to the user's profile photo." },
+        "isPremium": { "type": "boolean", "description": "Whether the user has a premium subscription." },
+        "points": { "type": "number", "description": "Total points earned by the user." },
+        "dailyStreak": { "type": "number", "description": "Current daily study streak." },
+        "school": { "type": "string", "description": "User's nursing school." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when the profile was created." }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "QuizHistory": {
+      "title": "Quiz History",
+      "description": "Stores results of completed quizzes.",
+      "type": "object",
+      "properties": {
+        "quizId": { "type": "string", "description": "ID or title of the quiz." },
+        "score": { "type": "number", "description": "Score achieved in the quiz." },
+        "total": { "type": "number", "description": "Total number of questions in the quiz." },
+        "completedAt": { "type": "string", "format": "date-time", "description": "Timestamp when the quiz was completed." }
+      },
+      "required": ["quizId", "score", "total", "completedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Collection of user profiles."
+    },
+    "/users/{userId}/history/{historyId}": {
+      "schema": "QuizHistory",
+      "description": "Sub-collection of quiz history for a specific user."
+    }
+  }
+}
