@@ -339,7 +339,7 @@ export default function App() {
             {activeTab === 'quizzes' && <QuizzesView onStartTopic={(topic) => startQuiz(`${topic} Quiz`)} />}
             {activeTab === 'exam' && <ExamModeView onStartExam={() => startQuiz('Full Mock Exam', true)} isPremium={isPremium} />}
             {activeTab === 'leaderboard' && <LeaderboardView users={leaderboardUsers} currentUser={user} />}
-            {activeTab === 'profile' && <ProfileView user={user} userStats={userStats} isPremium={isPremium} setIsPremium={setIsPremium} onLogout={handleLogout} />}
+            {activeTab === 'profile' && <ProfileView user={user} userStats={userStats} isPremium={isPremium} setIsPremium={setIsPremium} onLogout={handleLogout} setActiveTab={setActiveTab} />}
             {activeTab === 'premium' && <PremiumView isPremium={isPremium} setActiveTab={setActiveTab} />}
           </motion.div>
         </div>
@@ -941,7 +941,7 @@ function LeaderboardView({ users, currentUser }: { users: any[], currentUser: an
   );
 }
 
-function ProfileView({ user, userStats, isPremium, setIsPremium, onLogout }: { user: any, userStats: any, isPremium: boolean, setIsPremium: (val: boolean) => void, onLogout: () => void }) {
+function ProfileView({ user, userStats, isPremium, setIsPremium, onLogout, setActiveTab }: { user: any, userStats: any, isPremium: boolean, setIsPremium: (val: boolean) => void, onLogout: () => void, setActiveTab: (tab: string) => void }) {
   // Restrict Admin access to the owner's email
   const isAdmin = user?.email === 'afeezedeifoshaibu@gmail.com';
 
@@ -1007,7 +1007,7 @@ function ProfileView({ user, userStats, isPremium, setIsPremium, onLogout }: { u
             {!isPremium ? (
               <div className="rounded-3xl bg-white/5 p-6 border border-white/10">
                 <p className="text-sm font-medium text-white/60 leading-relaxed">Upgrade to unlock unlimited mock exams, AI analysis, and offline mode.</p>
-                <Button className="mt-6 w-full h-14 rounded-2xl bg-primary font-black uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95" onClick={() => setIsPremium(true)}>
+                <Button className="mt-6 w-full h-14 rounded-2xl bg-primary font-black uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95" onClick={() => setActiveTab('premium')}>
                   Upgrade Now
                 </Button>
               </div>
@@ -1015,9 +1015,6 @@ function ProfileView({ user, userStats, isPremium, setIsPremium, onLogout }: { u
               <div className="rounded-3xl bg-amber-500/10 p-6 border border-amber-500/20">
                 <p className="text-sm font-bold text-amber-500 uppercase tracking-widest">Premium Active</p>
                 <p className="mt-2 text-sm font-medium text-white/60">Your subscription is active until May 12, 2026.</p>
-                <Button variant="outline" className="mt-6 w-full h-14 rounded-2xl border-white/10 bg-white/5 text-white transition-all hover:bg-white/10" onClick={() => setIsPremium(false)}>
-                  Manage Subscription
-                </Button>
               </div>
             )}
           </div>
