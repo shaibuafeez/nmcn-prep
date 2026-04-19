@@ -67,7 +67,17 @@ service cloud.firestore {
              (!('isPremium' in data) || data.isPremium is bool) &&
              (!('points' in data) || data.points is number) &&
              (!('dailyStreak' in data) || data.dailyStreak is number) &&
-             (!('school' in data) || (data.school is string && data.school.size() < 100));
+             (!('school' in data) || (data.school is string && data.school.size() < 100)) &&
+             (!('premiumSince' in data) || isValidDateString(data.premiumSince)) &&
+             (!('lastPaymentRef' in data) || (data.lastPaymentRef is string && data.lastPaymentRef.size() < 200));
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['reference', 'amount', 'status', 'paidAt']) &&
+             data.reference is string && data.reference.size() > 0 && data.reference.size() < 200 &&
+             data.amount is number && data.amount > 0 &&
+             data.status is string && data.status in ['success', 'failed'] &&
+             isValidDateString(data.paidAt);
     }
 
     function isValidHistory(data) {
@@ -103,6 +113,12 @@ service cloud.firestore {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) && isValidHistory(request.resource.data);
         allow delete: if isOwner(userId);
+      }
+
+      match /payments/{paymentId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidPayment(request.resource.data);
+        // No update or delete — immutable audit trail
       }
     }
   }
