@@ -36,8 +36,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { QuizEngine } from '@/src/components/QuizEngine';
-import { MOCK_QUESTIONS } from '@/src/constants';
-import { auth, db, signInWithGoogle, isConfigured, handleFirestoreError, OperationType } from '@/src/firebase';
+import { buildDailyChallengeSession, buildFullMockExamSession, buildTopicQuizSession, FULL_MOCK_EXAM_BLUEPRINT, QUESTION_BANK_STATS, TOPIC_CATALOG } from '@/src/data/quizBuilder';
+import { auth, db, signInWithGoogle, handleFirestoreError, OperationType } from '@/src/firebase';
+import { QuizSession } from '@/src/types';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, collection, addDoc, updateDoc, increment, query, orderBy, limit } from 'firebase/firestore';
 
@@ -61,7 +62,7 @@ export default function App() {
   const [user, setUser] = React.useState<any>(null);
   const [isAuthReady, setIsAuthReady] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState('dashboard');
-  const [activeQuiz, setActiveQuiz] = React.useState<{ questions: typeof MOCK_QUESTIONS, title: string, isExam?: boolean } | null>(null);
+  const [activeQuiz, setActiveQuiz] = React.useState<QuizSession | null>(null);
   const [isPremium, setIsPremium] = React.useState(false);
   const [userStats, setUserStats] = React.useState<any>(null);
   const [leaderboardUsers, setLeaderboardUsers] = React.useState<any[]>([]);
@@ -150,12 +151,19 @@ export default function App() {
     }
   };
 
-  const startQuiz = (title: string, isExam = false) => {
-    setActiveQuiz({
-      questions: MOCK_QUESTIONS, // In a real app, we'd filter or fetch questions
-      title,
-      isExam
-    });
+  const startDailyChallenge = () => {
+    setActiveQuiz(buildDailyChallengeSession());
+  };
+
+  const startTopicQuiz = (topic: string) => {
+    const session = buildTopicQuizSession(topic);
+    if (session) {
+      setActiveQuiz(session);
+    }
+  };
+
+  const startExamQuiz = () => {
+    setActiveQuiz(buildFullMockExamSession());
   };
 
   if (!isAuthReady) {
@@ -176,13 +184,15 @@ export default function App() {
         <QuizEngine 
           questions={activeQuiz.questions}
           title={activeQuiz.title}
-          isExamMode={activeQuiz.isExam}
+          isExamMode={activeQuiz.isExamMode}
+          timeLimitMinutes={activeQuiz.timeLimit}
           onComplete={async (score) => {
             console.log('Quiz completed with score:', score);
             if (user) {
               const historyRef = collection(db, 'users', user.uid, 'history');
               try {
                 await addDoc(historyRef, {
+                  blueprintId: activeQuiz.blueprintId,
                   quizId: activeQuiz.title,
                   score,
                   total: activeQuiz.questions.length,
@@ -352,9 +362,9 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           >
-            {activeTab === 'dashboard' && <DashboardView userStats={userStats} onStartDaily={() => startQuiz('Daily Challenge')} />}
-            {activeTab === 'quizzes' && <QuizzesView onStartTopic={(topic) => startQuiz(`${topic} Quiz`)} />}
-            {activeTab === 'exam' && <ExamModeView onStartExam={() => startQuiz('Full Mock Exam', true)} isPremium={isPremium} />}
+            {activeTab === 'dashboard' && <DashboardView userStats={userStats} onStartDaily={startDailyChallenge} />}
+            {activeTab === 'quizzes' && <QuizzesView onStartTopic={startTopicQuiz} />}
+            {activeTab === 'exam' && <ExamModeView onStartExam={startExamQuiz} isPremium={isPremium} />}
             {activeTab === 'leaderboard' && <LeaderboardView users={leaderboardUsers} currentUser={user} />}
             {activeTab === 'profile' && <ProfileView user={user} userStats={userStats} isPremium={isPremium} setIsPremium={setIsPremium} onLogout={handleLogout} setActiveTab={setActiveTab} />}
             {activeTab === 'premium' && <PremiumView isPremium={isPremium} setActiveTab={setActiveTab} user={user} />}
@@ -453,7 +463,7 @@ function DashboardView({ userStats, onStartDaily }: { userStats: any, onStartDai
               morning pulse?
             </h3>
             <p className="max-w-md text-sm font-medium opacity-80">
-              15 high-yield questions curated by AI to strengthen your weak areas.
+              15 high-yield mixed questions drawn from the live NMCN-aligned bank.
             </p>
           </div>
           <div className="mt-6 flex items-center gap-4">
@@ -633,19 +643,25 @@ function ActivityItem({ title, time, score }: { title: string, time: string, sco
 
 function QuizzesView({ onStartTopic }: { onStartTopic: (topic: string) => void }) {
   const [searchQuery, setSearchQuery] = React.useState('');
-  
-  const topics = [
-    { name: 'Obstetrics', color: 'bg-pink-500', icon: <BookOpen size={20} /> },
-    { name: 'Medical-Surgical', color: 'bg-blue-500', icon: <Zap size={20} /> },
-    { name: 'Pediatrics', color: 'bg-orange-500', icon: <User size={20} /> },
-    { name: 'Psychiatry', color: 'bg-purple-500', icon: <Settings size={20} /> },
-    { name: 'Community Health', color: 'bg-emerald-500', icon: <GraduationCap size={20} /> },
-    { name: 'Pharmacology', color: 'bg-indigo-500', icon: <Zap size={20} /> },
-    { name: 'Nursing Ethics', color: 'bg-slate-500', icon: <BookOpen size={20} /> },
-    { name: 'Anatomy', color: 'bg-red-500', icon: <Settings size={20} /> }
-  ];
 
-  const filteredTopics = topics.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const topicStyles: Record<string, { color: string; icon: React.ReactNode }> = {
+    'Obstetrics': { color: 'bg-pink-500', icon: <BookOpen size={20} /> },
+    'Medical-Surgical': { color: 'bg-blue-500', icon: <Zap size={20} /> },
+    'Pediatrics': { color: 'bg-orange-500', icon: <User size={20} /> },
+    'Psychiatry': { color: 'bg-purple-500', icon: <Settings size={20} /> },
+    'Community Health': { color: 'bg-emerald-500', icon: <GraduationCap size={20} /> },
+    'Pharmacology': { color: 'bg-indigo-500', icon: <Zap size={20} /> },
+    'Nursing Ethics': { color: 'bg-slate-500', icon: <BookOpen size={20} /> },
+    'Anatomy & Physiology': { color: 'bg-red-500', icon: <Settings size={20} /> },
+    'Microbiology & IPC': { color: 'bg-teal-500', icon: <Search size={20} /> },
+  };
+
+  const topics = TOPIC_CATALOG.map((topic) => ({
+    ...topic,
+    ...(topicStyles[topic.title] || { color: 'bg-primary', icon: <BookOpen size={20} /> }),
+  }));
+
+  const filteredTopics = topics.filter((topic) => topic.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
     <div className="space-y-6">
@@ -653,7 +669,9 @@ function QuizzesView({ onStartTopic }: { onStartTopic: (topic: string) => void }
         <div className="space-y-3">
           <div>
             <h3 className="font-heading text-2xl md:text-3xl font-black tracking-tight text-foreground">Topic Quizzes</h3>
-            <p className="mt-1 text-sm font-medium text-muted-foreground">Master every subject in the NMCN curriculum</p>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">
+              {QUESTION_BANK_STATS.totalQuestions} original questions across {QUESTION_BANK_STATS.topicCount} exam domains
+            </p>
           </div>
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
@@ -674,7 +692,7 @@ function QuizzesView({ onStartTopic }: { onStartTopic: (topic: string) => void }
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         {filteredTopics.map((topic) => (
           <motion.div
-            key={topic.name}
+            key={topic.title}
             whileHover={{ y: -4 }}
             className="group relative overflow-hidden rounded-2xl bg-card p-5 shadow-lg shadow-slate-200/30 transition-all border border-transparent hover:border-primary/10"
           >
@@ -685,19 +703,19 @@ function QuizzesView({ onStartTopic }: { onStartTopic: (topic: string) => void }
             </div>
 
             <div className="space-y-1">
-              <h4 className="font-heading text-lg font-black tracking-tight">{topic.name}</h4>
-              <p className="text-xs font-medium text-muted-foreground opacity-80">150+ Questions available</p>
+              <h4 className="font-heading text-lg font-black tracking-tight">{topic.title}</h4>
+              <p className="text-xs font-medium text-muted-foreground opacity-80">{topic.questionCount} source-tagged questions available</p>
             </div>
 
             <div className="mt-4 space-y-2.5">
               <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
-                <span className="text-muted-foreground">Mastery</span>
-                <span className="text-primary">65%</span>
+                <span className="text-muted-foreground">Coverage</span>
+                <span className="text-primary">{topic.questionCount} items</span>
               </div>
-              <Progress value={65} className="h-1.5 rounded-full bg-secondary" />
+              <Progress value={Math.min(100, (topic.questionCount / 12) * 100)} className="h-1.5 rounded-full bg-secondary" />
               <Button
                 className="h-10 w-full rounded-xl bg-foreground text-sm font-black text-background transition-all hover:bg-primary hover:text-primary-foreground"
-                onClick={() => onStartTopic(topic.name)}
+                onClick={() => onStartTopic(topic.title)}
               >
                 Browse Quizzes
               </Button>
@@ -750,7 +768,7 @@ function ExamModeView({ onStartExam, isPremium }: { onStartExam: () => void, isP
         </motion.div>
         <h3 className="font-heading text-2xl md:text-3xl font-black tracking-tight text-foreground">Exam Simulation</h3>
         <p className="mx-auto max-w-xl text-sm font-medium leading-relaxed text-muted-foreground">
-          Experience the real NMCN exam environment. 200 questions, 3 hours, no instant feedback.
+          Experience a full mock built from the live bank: {FULL_MOCK_EXAM_BLUEPRINT.questionCount} questions, {FULL_MOCK_EXAM_BLUEPRINT.timeLimit} minutes, no instant feedback.
         </p>
       </div>
 
@@ -760,7 +778,7 @@ function ExamModeView({ onStartExam, isPremium }: { onStartExam: () => void, isP
           <CardHeader className="p-0">
             <Badge className="mb-3 w-fit rounded-full bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-primary">Standard Mock</Badge>
             <CardTitle className="font-heading text-xl md:text-2xl font-black tracking-tight">Mock Exam 1</CardTitle>
-            <CardDescription className="text-sm font-medium mt-1">200 Questions • 180 Minutes</CardDescription>
+            <CardDescription className="text-sm font-medium mt-1">{FULL_MOCK_EXAM_BLUEPRINT.questionCount} Questions • {FULL_MOCK_EXAM_BLUEPRINT.timeLimit} Minutes</CardDescription>
           </CardHeader>
           <CardContent className="p-0 mt-5">
             <ul className="mb-5 space-y-2 text-sm font-medium text-muted-foreground">
@@ -821,9 +839,9 @@ function ExamModeView({ onStartExam, isPremium }: { onStartExam: () => void, isP
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             {[
-              { date: 'Apr 10, 2026', score: '165/200', status: 'Pass', color: 'text-emerald-500' },
-              { date: 'Apr 05, 2026', score: '142/200', status: 'Pass', color: 'text-emerald-500' },
-              { date: 'Mar 28, 2026', score: '118/200', status: 'Fail', color: 'text-destructive' }
+              { date: 'Apr 10, 2026', score: '82/100', status: 'Pass', color: 'text-emerald-500' },
+              { date: 'Apr 05, 2026', score: '71/100', status: 'Pass', color: 'text-emerald-500' },
+              { date: 'Mar 28, 2026', score: '59/100', status: 'Fail', color: 'text-destructive' }
             ].map((attempt, i) => (
               <Card key={i} className="border-none bg-card p-5 shadow-md rounded-xl transition-all hover:scale-[1.02]">
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">{attempt.date}</p>
@@ -1196,18 +1214,18 @@ function PremiumView({ isPremium, setActiveTab, user }: { isPremium: boolean, se
             </CardHeader>
             <CardContent className="p-0 flex-1">
               <ul className="space-y-2.5">
-                {['10 Daily MCQs', 'Basic Explanations', '1 Mock Exam / Month'].map((item) => (
+                {['15 Daily MCQs', 'Basic Explanations', '1 Mock Exam / Month'].map((item) => (
                   <li key={item} className="flex items-center gap-2.5 text-sm font-medium text-muted-foreground">
                     <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
-                      <Badge size={10} className="p-0 bg-transparent text-inherit">✓</Badge>
+                      <span className="text-[10px] font-black">✓</span>
                     </div>
                     {item}
                   </li>
                 ))}
-                {['Unlimited Topic Quizzes', 'AI Study Assistant'].map((item) => (
+                {['Unlimited Topic Quizzes', 'Source-Tagged Review Notes'].map((item) => (
                   <li key={item} className="flex items-center gap-2.5 text-sm font-medium text-muted-foreground/40">
                     <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-                      <Badge size={10} className="p-0 bg-transparent text-inherit">✕</Badge>
+                      <span className="text-[10px] font-black">✕</span>
                     </div>
                     {item}
                   </li>
@@ -1239,11 +1257,11 @@ function PremiumView({ isPremium, setActiveTab, user }: { isPremium: boolean, se
               <ul className="space-y-2.5">
                 {[
                   'Unlimited Daily MCQs',
-                  'Detailed Video Explanations',
+                  'Detailed Rationales',
                   'Unlimited Topic Quizzes',
                   'Weekly Predictive Mock Exams',
-                  'AI-Powered Weak Area Analysis',
-                  'Offline Study Mode'
+                  'Weak Area Analysis',
+                  'Source-Tagged Review Notes'
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2.5 text-sm font-medium text-white/80">
                     <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-primary">
